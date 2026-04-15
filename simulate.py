@@ -1,6 +1,7 @@
 
 
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 # Simulation settings
 SNR_list  = list(range(5, 65, 5)) + [1000]
@@ -9,12 +10,26 @@ MD_diff   = np.linspace(1.6, 2.2, steps + 1)    # [10^-3 mm^2/s]
 Mf        = np.linspace(0.15, 0.25, steps + 1)   # [-]
 MD_pseudo = np.linspace(20, 120, steps + 1)      # [10^-3 mm^2/s]
 FAmax     = 0.5
-N_sim     = 10
+N_sim     = 100
 
 # load bval and bvec
 bval = np.genfromtxt('data/dejong_bval.bval')
 bvec = np.genfromtxt('data/dejong_bvec.bvec')
 
+
+def rotate_tensor(eigenvalues):
+    
+    # diagonal tensor from eigenvalues
+    Lambda = np.diag(eigenvalues)
+    
+    # random rotation matrix
+    R = Rotation.random().as_matrix()
+    
+    # rotated tensor: D = R * Lambda * R^T
+    D = R @ Lambda @ R.T
+    
+    # return 6 unique elements [Dxx, Dyy, Dzz, Dxy, Dxz, Dyz]
+    return np.array([D[0,0], D[1,1], D[2,2], D[0,1], D[0,2], D[1,2]])
 
 def getlambdas(MD, FAmax=0.5):
     
@@ -59,121 +74,21 @@ def calc_bmat(bval, bvec):
 
     return bmat
 
-def signal_model1(eigenvalues_D, bmat, S0=1.0):
-    # Model 1: DTI only D tensor -> S = S0 * exp(-b * g^T * D * g)
-    
-    
-    # D tensor elements (eigenvectors aligned with x,y,z axes)
-    D_tensor = np.array([
-        eigenvalues_D[0],  # Dxx = lambda1
-        eigenvalues_D[1],  # Dyy = lambda2
-        eigenvalues_D[2],  # Dzz = lambda3
-        0.0,               # Dxy = 0
-        0.0,               # Dxz = 0
-        0.0                # Dyz = 0
-    ]) * 1e-3              # convert to mm^2/s
-
-    S = S0 * np.exp(-bmat @ D_tensor) # S0 * -(b * g^T * g) * D
+def signal_model1(D_tensor, bmat, S0=1.0):
+    # Model 1: DTI only
+    # S = S0 * exp(-b * g^T * D * g)
+    S = S0 * np.exp(-bmat @ D_tensor)
     return S
 
-def signal_model2(eigenvalues_D, eigenvalues_Dstar, f, bmat, S0=1.0):
-    
-    #Model 2: D tensor + D* tensor + f scalar -> S = S0 * (f * exp(-b * g^T * D* * g) + (1-f) * exp(-b * g^T * D * g))
-    
-    
-    # D tensor elements
-    D_tensor = np.array([
-        eigenvalues_D[0],  # Dxx = lambda1
-        eigenvalues_D[1],  # Dyy = lambda2
-        eigenvalues_D[2],  # Dzz = lambda3
-        0.0,               # Dxy = 0
-        0.0,               # Dxz = 0
-        0.0                # Dyz = 0
-    ]) * 1e-3
-
-    # D* tensor elements
-    Dstar_tensor = np.array([
-        eigenvalues_Dstar[0],  # Dxx* = lambda1
-        eigenvalues_Dstar[1],  # Dyy* = lambda2
-        eigenvalues_Dstar[2],  # Dzz* = lambda3
-        0.0,                   # Dxy* = 0
-        0.0,                   # Dxz* = 0
-        0.0                    # Dyz* = 0
-    ]) * 1e-3
-
-    S = S0 * (f * np.exp(-bmat @ Dstar_tensor) + (1-f) * np.exp(-bmat @ D_tensor)) #S = S0 * (f * exp(-b * g^T * D* * g) + (1-f) * exp(-b * g^T * D * g))
+def signal_model2(D_tensor, Dstar_tensor, f, bmat, S0=1.0):
+    # Model 2: D tensor + D* tensor + f scalar
+    # S = S0 * (f * exp(-b * g^T * D* * g) + (1-f) * exp(-b * g^T * D * g))
+    S = S0 * (f * np.exp(-bmat @ Dstar_tensor) + (1-f) * np.exp(-bmat @ D_tensor))
     return S
 
-def signal_model3(eigenvalues_D, eigenvalues_f, Dstar_scalar, bval, bmat, bvec, S0=1.0):
-    #Model 3: D tensor + D* scalar + f tensor -> S = S0 * (g^T*f*g * exp(-b * D*) + (1 - g^T*f*g) * exp(-b * g^T * D * g))
-    
-    # D tensor elements
-    D_tensor = np.array([
-        eigenvalues_D[0],
-        eigenvalues_D[1],
-        eigenvalues_D[2],
-        0.0, 0.0, 0.0
-    ]) * 1e-3
-
-    # f tensor elements
-    f_tensor = np.array([
-        eigenvalues_f[0], # fxx = lambda1 -> perfusion fraction in x direction
-        eigenvalues_f[1], # fyy = lambda2 -> perfusion fraction in y direction
-        eigenvalues_f[2], # fzz = lambda3 -> perfusion fraction in z direction
-        0.0, 0.0, 0.0
-    ])
-
-    # direction matrix (bmat without b) for g^T * f * g
-    gx = bvec[0, :]
-    gy = bvec[1, :]
-    gz = bvec[2, :]
-    dir_matrix = np.column_stack([
-        gx**2,
-        gy**2,
-        gz**2,
-        2 * gx * gy,
-        2 * gx * gz,
-        2 * gy * gz
-    ])  # shape (321, 6)
-
-    # g^T * f * g for all 321 measurements
-    gTfg = dir_matrix @ f_tensor  # shape (321,)
-
-    # D* scalar
-    Dstar = Dstar_scalar * 1e-3
-
+def signal_model3(D_tensor, f_tensor, Dstar_scalar, bval, bmat, bvec, S0=1.0):
+    # Model 3: D tensor + D* scalar + f tensor
     # S = S0 * (g^T*f*g * exp(-b * D*) + (1 - g^T*f*g) * exp(-b * g^T * D * g))
-    S = S0 * (gTfg * np.exp(-bval * Dstar) + (1 - gTfg) * np.exp(-bmat @ D_tensor))  
-    return S
-
-def signal_model4(eigenvalues_D, eigenvalues_Dstar, eigenvalues_f, bmat, bvec, S0=1.0):
-    #Model 4: D tensor + D* tensor + f tensor S = S0 * (g^T*f*g * exp(-b * g^T*D**g) + (1 - g^T*f*g) * exp(-b * g^T*D*g))
-    
-    # D tensor elements
-    D_tensor = np.array([
-        eigenvalues_D[0],
-        eigenvalues_D[1],
-        eigenvalues_D[2],
-        0.0, 0.0, 0.0
-    ]) * 1e-3
-
-    # D* tensor elements
-    Dstar_tensor = np.array([
-        eigenvalues_Dstar[0],
-        eigenvalues_Dstar[1],
-        eigenvalues_Dstar[2],
-        0.0, 0.0, 0.0
-    ]) * 1e-3
-
-    # f tensor elements
-    f_tensor = np.array([
-        eigenvalues_f[0],
-        eigenvalues_f[1],
-        eigenvalues_f[2],
-        0.0, 0.0, 0.0
-    ])
-
-    # direction matrix for g^T * f * g
     gx = bvec[0, :]
     gy = bvec[1, :]
     gz = bvec[2, :]
@@ -181,10 +96,22 @@ def signal_model4(eigenvalues_D, eigenvalues_Dstar, eigenvalues_f, bmat, bvec, S
         gx**2, gy**2, gz**2,
         2*gx*gy, 2*gx*gz, 2*gy*gz
     ])
+    gTfg = dir_matrix @ f_tensor
+    Dstar = Dstar_scalar * 1e-3
+    S = S0 * (gTfg * np.exp(-bval * Dstar) + (1 - gTfg) * np.exp(-bmat @ D_tensor))
+    return S
 
-    # g^T * f * g for all 321 measurements
-    gTfg = dir_matrix @ f_tensor  # shape (321,)
-
+def signal_model4(D_tensor, Dstar_tensor, f_tensor, bmat, bvec, S0=1.0):
+    # Model 4: D tensor + D* tensor + f tensor
+    # S = S0 * (g^T*f*g * exp(-b * g^T*D**g) + (1 - g^T*f*g) * exp(-b * g^T*D*g))
+    gx = bvec[0, :]
+    gy = bvec[1, :]
+    gz = bvec[2, :]
+    dir_matrix = np.column_stack([
+        gx**2, gy**2, gz**2,
+        2*gx*gy, 2*gx*gz, 2*gy*gz
+    ])
+    gTfg = dir_matrix @ f_tensor
     S = S0 * (gTfg * np.exp(-bmat @ Dstar_tensor) + (1 - gTfg) * np.exp(-bmat @ D_tensor))
     return S
 
@@ -199,8 +126,8 @@ def add_rician_noise(signal, SNR):
     noisy_signal = np.sqrt((signal + noise_real)**2 + noise_imag**2)
     return noisy_signal
 
+
 for model in models:
-    print(f'Simulating {model}...')
     
     # storage lists
     all_signals    = []  # noisy signals
@@ -215,28 +142,33 @@ for model in models:
                 eigenvalues_D,     FA_D     = getlambdas(md,  FAmax)
                 eigenvalues_Dstar, FA_Dstar = getlambdas(mds, FAmax)
                 eigenvalues_f,     FA_f     = getlambdas(mf,  FAmax)
+
+                # apply random rotation to each tensor
+                D_tensor     = rotate_tensor(eigenvalues_D)     * 1e-3  # [Dxx, Dyy, Dzz, Dxy, Dxz, Dyz]
+                Dstar_tensor = rotate_tensor(eigenvalues_Dstar) * 1e-3
+                f_tensor     = rotate_tensor(eigenvalues_f)             # no unit conversion for f  
                 
                 # compute true signal for this parameter combination
                 if model == 'model1':
-                    S_true = signal_model1(eigenvalues_D, bmat)
+                     S_true = signal_model1(D_tensor, bmat)
                 elif model == 'model2':
-                    S_true = signal_model2(eigenvalues_D, eigenvalues_Dstar, mf, bmat)
+                     S_true = signal_model2(D_tensor, Dstar_tensor, mf, bmat)
                 elif model == 'model3':
-                    S_true = signal_model3(eigenvalues_D, eigenvalues_f, mds, bval, bmat, bvec)
+                      S_true = signal_model3(D_tensor, f_tensor, mds, bval, bmat, bvec)
                 elif model == 'model4':
-                    S_true = signal_model4(eigenvalues_D, eigenvalues_Dstar, eigenvalues_f, bmat, bvec)
+                     S_true = signal_model4(D_tensor, Dstar_tensor, f_tensor, bmat, bvec)
                 
                 # ground truth for this combination
                 gt = {
-                    'MD_diff':              md,
-                    'FA_diff':              FA_D,
-                    'eigenvalues_D':        eigenvalues_D,
-                    'Mf':                   mf,
-                    'FA_f':                 FA_f,
-                    'eigenvalues_f':        eigenvalues_f,
-                    'MD_pseudo':            mds,
-                    'FA_pseudo':            FA_Dstar,
-                    'eigenvalues_Dstar':    eigenvalues_Dstar
+                    'MD_diff':      md,
+                    'FA_diff':      FA_D,
+                    'D_tensor':     D_tensor,
+                    'Mf':           mf,
+                    'FA_f':         FA_f,
+                    'f_tensor':     f_tensor,
+                    'MD_pseudo':    mds,
+                    'FA_pseudo':    FA_Dstar,
+                    'Dstar_tensor': Dstar_tensor
                 }
                 
                 for snr in SNR_list:
@@ -252,12 +184,8 @@ for model in models:
     # convert to numpy arrays
     all_signals = np.array(all_signals)  # shape (N, 321)
     all_snr     = np.array(all_snr)      # shape (N,)
-    
-    print(f'{model} done! Signals shape: {all_signals.shape}')
-    
+        
     # save
     np.save(f'data/simulated_{model}_signals.npy', all_signals)
     np.save(f'data/simulated_{model}_snr.npy', all_snr)
     np.save(f'data/simulated_{model}_gt.npy', all_gt)
-
-print('Simulations done')
