@@ -21,7 +21,7 @@ import copy
 
 # Define the neural network.
 class Net(nn.Module):
-    def __init__(self, bval, bvec, net_pars):
+    def __init__(self, bval, bvec, net_pars, model='model2'):
         """
         this defines the Net class which is the network we want to train.
         :param bval: a 1D array with the b-values (.bval file)
@@ -38,6 +38,7 @@ class Net(nn.Module):
         self.bvec = bvec
         self.bval = bval
         self.net_pars = net_pars
+        self.model = model
         if self.net_pars.width == 0:
             self.net_pars.width = len(bval)
         # define module lists. If network is not parallel, we can do with 1 list, otherwise we need a list per parameter
@@ -72,11 +73,16 @@ class Net(nn.Module):
                 self.fc_layers2.extend([nn.Dropout(self.net_pars.dropout)])
                 self.fc_layers3.extend([nn.Dropout(self.net_pars.dropout)])
         # Final layer yielding output
-        self.encoder0 = nn.Sequential(*self.fc_layers0, nn.Linear(self.net_pars.width, 6)) #outputs 6 Cholesky components of D tensor
-        self.encoder1 = nn.Sequential(*self.fc_layers1, nn.Linear(self.net_pars.width, 6)) #outputs 6 Cholesky components of D* tensor
-        self.encoder2 = nn.Sequential(*self.fc_layers2, nn.Linear(self.net_pars.width, 1)) #outputs 1 scalar parameter: f
-        if self.net_pars.fitS0:
-            self.encoder3 = nn.Sequential(*self.fc_layers3, nn.Linear(self.net_pars.width, 1)) #outputs S0, in case it is estimated
+        self.encoder0 = nn.Sequential(*self.fc_layers0, nn.Linear(self.net_pars.width, 6))  # D tensor, all models
+        if self.model == 'model2':
+            self.encoder1 = nn.Sequential(*self.fc_layers1, nn.Linear(self.net_pars.width, 6))  # D* tensor
+            self.encoder2 = nn.Sequential(*self.fc_layers2, nn.Linear(self.net_pars.width, 1))  # f scalar
+        elif self.model == 'model3':
+            self.encoder1 = nn.Sequential(*self.fc_layers1, nn.Linear(self.net_pars.width, 1))  # D* scalar
+            self.encoder2 = nn.Sequential(*self.fc_layers2, nn.Linear(self.net_pars.width, 6))  # f tensor
+        elif self.model == 'model4':
+            self.encoder1 = nn.Sequential(*self.fc_layers1, nn.Linear(self.net_pars.width, 6))  # D* tensor
+            self.encoder2 = nn.Sequential(*self.fc_layers2, nn.Linear(self.net_pars.width, 6))  # f tensor
 
 
     def forward(self, X):
@@ -93,10 +99,16 @@ class Net(nn.Module):
         U456max= self.net_pars.cons_max[4]
         S0min = self.net_pars.cons_min[5]
         S0max = self.net_pars.cons_max[5]
+        W123min = self.net_pars.cons_min_w[0]
+        W123max = self.net_pars.cons_max_w[0]
+        W456min = self.net_pars.cons_min_w[1]
+        W456max = self.net_pars.cons_max_w[1]
+
 
         params0 = self.encoder0(X)
-        params1 = self.encoder1(X)
-        params2 = self.encoder2(X)
+        if self.model != 'model1':
+            params1 = self.encoder1(X)
+            params2 = self.encoder2(X)
         if self.net_pars.fitS0:
             params3 = self.encoder3(X)
 
@@ -108,15 +120,36 @@ class Net(nn.Module):
         V_zz = V456min + torch.sigmoid(params0[:, 4].unsqueeze(1)) * (V456max - V456min)
         V_yz = V456min + torch.sigmoid(params0[:, 5].unsqueeze(1)) * (V456max - V456min)
         
-        U_xx = U123min + torch.sigmoid(params1[:, 0].unsqueeze(1)) * (U123max - U123min)
-        U_xy = U123min + torch.sigmoid(params1[:, 1].unsqueeze(1)) * (U123max - U123min)
-        U_xz = U123min + torch.sigmoid(params1[:, 2].unsqueeze(1)) * (U123max - U123min)
-        U_yy = U456min + torch.sigmoid(params1[:, 3].unsqueeze(1)) * (U456max - U456min)
-        U_zz = U456min + torch.sigmoid(params1[:, 4].unsqueeze(1)) * (U456max - U456min)
-        U_yz = U456min + torch.sigmoid(params1[:, 5].unsqueeze(1)) * (U456max - U456min)
+        if self.model == 'model2':
+            U_xx = U123min + torch.sigmoid(params1[:, 0].unsqueeze(1)) * (U123max - U123min)
+            U_xy = U123min + torch.sigmoid(params1[:, 1].unsqueeze(1)) * (U123max - U123min)
+            U_xz = U123min + torch.sigmoid(params1[:, 2].unsqueeze(1)) * (U123max - U123min)
+            U_yy = U456min + torch.sigmoid(params1[:, 3].unsqueeze(1)) * (U456max - U456min)
+            U_zz = U456min + torch.sigmoid(params1[:, 4].unsqueeze(1)) * (U456max - U456min)
+            U_yz = U456min + torch.sigmoid(params1[:, 5].unsqueeze(1)) * (U456max - U456min)
+            Fp = torch.abs(params2[:, 0].unsqueeze(1))
+        elif self.model == 'model3':
+            Dstar_scalar = 0.020 + torch.sigmoid(params1[:, 0].unsqueeze(1)) * (0.120 - 0.020)
+            W_xx = W123min + torch.sigmoid(params2[:, 0].unsqueeze(1)) * (W123max - W123min)
+            W_xy = W123min + torch.sigmoid(params2[:, 1].unsqueeze(1)) * (W123max - W123min)
+            W_xz = W123min + torch.sigmoid(params2[:, 2].unsqueeze(1)) * (W123max - W123min)
+            W_yy = W456min + torch.sigmoid(params2[:, 3].unsqueeze(1)) * (W456max - W456min)
+            W_zz = W456min + torch.sigmoid(params2[:, 4].unsqueeze(1)) * (W456max - W456min)
+            W_yz = W456min + torch.sigmoid(params2[:, 5].unsqueeze(1)) * (W456max - W456min)
+        elif self.model == 'model4':
+            U_xx = U123min + torch.sigmoid(params1[:, 0].unsqueeze(1)) * (U123max - U123min)
+            U_xy = U123min + torch.sigmoid(params1[:, 1].unsqueeze(1)) * (U123max - U123min)
+            U_xz = U123min + torch.sigmoid(params1[:, 2].unsqueeze(1)) * (U123max - U123min)
+            U_yy = U456min + torch.sigmoid(params1[:, 3].unsqueeze(1)) * (U456max - U456min)
+            U_zz = U456min + torch.sigmoid(params1[:, 4].unsqueeze(1)) * (U456max - U456min)
+            U_yz = U456min + torch.sigmoid(params1[:, 5].unsqueeze(1)) * (U456max - U456min)
+            W_xx = W123min + torch.sigmoid(params2[:, 0].unsqueeze(1)) * (W123max - W123min)
+            W_xy = W123min + torch.sigmoid(params2[:, 1].unsqueeze(1)) * (W123max - W123min)
+            W_xz = W123min + torch.sigmoid(params2[:, 2].unsqueeze(1)) * (W123max - W123min)
+            W_yy = W456min + torch.sigmoid(params2[:, 3].unsqueeze(1)) * (W456max - W456min)
+            W_zz = W456min + torch.sigmoid(params2[:, 4].unsqueeze(1)) * (W456max - W456min)
+            W_yz = W456min + torch.sigmoid(params2[:, 5].unsqueeze(1)) * (W456max - W456min)
         
-        Fp = torch.abs(params2[:, 0].unsqueeze(1)) 
-            
         if self.net_pars.fitS0:
             S0 = S0min + torch.sigmoid(params3[:, 0].unsqueeze(1)) * (S0max - S0min)
             
@@ -128,32 +161,63 @@ class Net(nn.Module):
                 +  2*self.bvec[1,:]*self.bvec[2,:]*(V_xy*V_yz+V_yy*V_zz) \
                 +  2*self.bvec[0,:]*self.bvec[2,:]*(V_xx*V_zz) 
         
-        #calculating gT*Dstar*g from Cholesky components of Dstar
-        bvecT_Dp_bvec = self.bvec[0,:]*self.bvec[0,:]*U_xx*U_xx \
-                +  self.bvec[1,:]*self.bvec[1,:]*(U_xy*U_xy+U_yy*U_yy) \
-                +  self.bvec[2,:]*self.bvec[2,:]*(U_xz*U_xz+U_yz*U_yz+U_zz*U_zz) \
-                +  2*self.bvec[1,:]*self.bvec[0,:]*(U_xx*U_yy) \
-                +  2*self.bvec[1,:]*self.bvec[2,:]*(U_xy*U_yz+U_yy*U_zz) \
-                +  2*self.bvec[0,:]*self.bvec[2,:]*(U_xx*U_zz) 
+        #calculating gT*Dstar*g from Cholesky components of Dstar (only models with D* tensor)
+        if self.model == 'model2' or self.model == 'model4':
+            bvecT_Dp_bvec = self.bvec[0,:]*self.bvec[0,:]*U_xx*U_xx \
+                    +  self.bvec[1,:]*self.bvec[1,:]*(U_xy*U_xy+U_yy*U_yy) \
+                    +  self.bvec[2,:]*self.bvec[2,:]*(U_xz*U_xz+U_yz*U_yz+U_zz*U_zz) \
+                    +  2*self.bvec[1,:]*self.bvec[0,:]*(U_xx*U_yy) \
+                    +  2*self.bvec[1,:]*self.bvec[2,:]*(U_xy*U_yz+U_yy*U_zz) \
+                    +  2*self.bvec[0,:]*self.bvec[2,:]*(U_xx*U_zz)
         
                                                                                                                                                               
         # here we estimate X, the signal as function of b-values and directions g given the predicted IVIM parameters. Although
         # this parameter is not interesting for prediction, it is used in the loss function
-        X_temp=[]
-        if self.net_pars.fitS0:
-            X_temp.append(S0 * ((Fp * torch.exp(-self.bval*bvecT_Dp_bvec) + (1-Fp)* torch.exp(-self.bval*bvecT_Dt_bvec))))
-        else:
-            X_temp.append(((Fp * torch.exp(-self.bval*bvecT_Dp_bvec) + (1-Fp)* torch.exp(-self.bval*bvecT_Dt_bvec))))
-        X = torch.cat(X_temp,dim=1)
-        X[X>1]=1 #make sure the network keeps optimizing and does not explode e.g., when signal become much larger than 1
-        if self.net_pars.fitS0:
-            return X, Fp, V_xx, V_xy, V_xz, V_yy, V_zz, V_yz, U_xx, U_xy, U_xz, U_yy, U_zz, U_yz, S0
-        else:
-            return X, Fp, V_xx, V_xy, V_xz, V_yy, V_zz, V_yz, U_xx, U_xy, U_xz, U_yy, U_zz, U_yz, torch.ones(len(V_xx))
+        if self.model == 'model1':
+            X = torch.exp(-self.bval * bvecT_Dt_bvec)
+            X = X.clamp(max=1)
+            return X, V_xx, V_xy, V_xz, V_yy, V_zz, V_yz
+        elif self.model == 'model2':
+            X_temp = []
+            if self.net_pars.fitS0:
+                X_temp.append(S0 * (Fp * torch.exp(-self.bval*bvecT_Dp_bvec) + (1-Fp) * torch.exp(-self.bval*bvecT_Dt_bvec)))
+            else:
+                X_temp.append(Fp * torch.exp(-self.bval*bvecT_Dp_bvec) + (1-Fp) * torch.exp(-self.bval*bvecT_Dt_bvec))
+            X = torch.cat(X_temp, dim=1)
+            X = X.clamp(max=1)
+            if self.net_pars.fitS0:
+                return X, Fp, V_xx, V_xy, V_xz, V_yy, V_zz, V_yz, U_xx, U_xy, U_xz, U_yy, U_zz, U_yz, S0
+            else:
+                return X, Fp, V_xx, V_xy, V_xz, V_yy, V_zz, V_yz, U_xx, U_xy, U_xz, U_yy, U_zz, U_yz, torch.ones(len(V_xx))
+        elif self.model == 'model3':
+            bvecT_Wf_bvec = self.bvec[0,:]*self.bvec[0,:]*W_xx*W_xx \
+                    +  self.bvec[1,:]*self.bvec[1,:]*(W_xy*W_xy+W_yy*W_yy) \
+                    +  self.bvec[2,:]*self.bvec[2,:]*(W_xz*W_xz+W_yz*W_yz+W_zz*W_zz) \
+                    +  2*self.bvec[1,:]*self.bvec[0,:]*(W_xx*W_yy) \
+                    +  2*self.bvec[1,:]*self.bvec[2,:]*(W_xy*W_yz+W_yy*W_zz) \
+                    +  2*self.bvec[0,:]*self.bvec[2,:]*(W_xx*W_zz)
+            X_temp = []
+            X_temp.append(bvecT_Wf_bvec * torch.exp(-self.bval * Dstar_scalar) + (1 - bvecT_Wf_bvec) * torch.exp(-self.bval * bvecT_Dt_bvec))
+            X = torch.cat(X_temp, dim=1)
+            X = X.clamp(max=1)
+            return X, Dstar_scalar, V_xx, V_xy, V_xz, V_yy, V_zz, V_yz, W_xx, W_xy, W_xz, W_yy, W_zz, W_yz
+        elif self.model == 'model4':
+            bvecT_Wf_bvec = self.bvec[0,:]*self.bvec[0,:]*W_xx*W_xx \
+                    +  self.bvec[1,:]*self.bvec[1,:]*(W_xy*W_xy+W_yy*W_yy) \
+                    +  self.bvec[2,:]*self.bvec[2,:]*(W_xz*W_xz+W_yz*W_yz+W_zz*W_zz) \
+                    +  2*self.bvec[1,:]*self.bvec[0,:]*(W_xx*W_yy) \
+                    +  2*self.bvec[1,:]*self.bvec[2,:]*(W_xy*W_yz+W_yy*W_zz) \
+                    +  2*self.bvec[0,:]*self.bvec[2,:]*(W_xx*W_zz)
+            X_temp = []
+            X_temp.append(bvecT_Wf_bvec * torch.exp(-self.bval * bvecT_Dp_bvec) + (1 - bvecT_Wf_bvec) * torch.exp(-self.bval * bvecT_Dt_bvec))
+            X = torch.cat(X_temp, dim=1)
+            X = X.clamp(max=1)
+            return X, V_xx, V_xy, V_xz, V_yy, V_zz, V_yz, U_xx, U_xy, U_xz, U_yy, U_zz, U_yz, W_xx, W_xy, W_xz, W_yy, W_zz, W_yz
+
        
 
 
-def learn_IVIM(X_train, bval, bvec, arg):
+def learn_IVIM(X_train, bval, bvec, arg, model='model2'):
     """
     This program builds a IVIM-DTI-NET network and trains it.
     :param X_train: 2D array of IVIM data we use for training. First axis are the voxels and second axis are the signals at the b-value and gradient vector combination
@@ -169,7 +233,8 @@ def learn_IVIM(X_train, bval, bvec, arg):
     # initialising the network of choice using the input argument arg
     bval = torch.FloatTensor(bval[:]).to(arg.train_pars.device)
     bvec = torch.FloatTensor(bvec[:]).to(arg.train_pars.device)
-    net = Net(bval, bvec, arg.net_pars).to(arg.train_pars.device)
+    net = Net(bval, bvec, arg.net_pars, model=model).to(arg.train_pars.device)
+
 
     # defining the loss function; not explored yet
     if arg.train_pars.loss_fun == 'rms':
@@ -198,9 +263,9 @@ def learn_IVIM(X_train, bval, bvec, arg):
 
     # defining optimiser
     if arg.train_pars.scheduler:
-        optimizer, scheduler = load_optimizer(net, arg)
+        optimizer, scheduler = load_optimizer(net, arg, model=model)
     else:
-        optimizer = load_optimizer(net, arg)
+        optimizer = load_optimizer(net, arg, model=model)
 
     # Initialising parameters
     best = 1e16
@@ -228,7 +293,7 @@ def learn_IVIM(X_train, bval, bvec, arg):
             # put batch on GPU if pressent
             X_batch = X_batch.to(arg.train_pars.device)
             ## forward + backward + optimize
-            X_pred, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = net(X_batch)
+            X_pred, *_ = net(X_batch)
             # removing nans and too high/low predictions to prevent overshooting
             X_pred[isnan(X_pred)] = 0
             X_pred[X_pred < 0] = 0
@@ -249,7 +314,7 @@ def learn_IVIM(X_train, bval, bvec, arg):
             optimizer.zero_grad()
             X_batch = X_batch.to(arg.train_pars.device)
             # do prediction, only look at predicted IVIM signal
-            X_pred, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = net(X_batch)
+            X_pred, *_ = net(X_batch)
             X_pred[isnan(X_pred)] = 0
             X_pred[X_pred < 0] = 0
             X_pred[X_pred > 3] = 3
@@ -315,14 +380,13 @@ def learn_IVIM(X_train, bval, bvec, arg):
     return net
 
 
-def load_optimizer(net, arg):
+def load_optimizer(net, arg, model='model2'):
+    par_list = [{'params': net.encoder0.parameters(), 'lr': arg.train_pars.lr}]
+    if model != 'model1':
+        par_list.append({'params': net.encoder1.parameters()})
+        par_list.append({'params': net.encoder2.parameters()})
     if arg.net_pars.fitS0:
-        par_list = [{'params': net.encoder0.parameters(), 'lr': arg.train_pars.lr},
-                    {'params': net.encoder1.parameters()}, {'params': net.encoder2.parameters()},
-                    {'params': net.encoder3.parameters()}]
-    else:
-        par_list = [{'params': net.encoder0.parameters(), 'lr': arg.train_pars.lr},
-                    {'params': net.encoder1.parameters()}, {'params': net.encoder2.parameters()}]
+        par_list.append({'params': net.encoder3.parameters()})
     if arg.train_pars.optim == 'adam':
         optimizer = optim.Adam(par_list, lr=arg.train_pars.lr, weight_decay=1e-4)
     elif arg.train_pars.optim == 'sgd':
@@ -356,7 +420,6 @@ def predict_IVIM(data, bval, bvec, net, arg):
     # initialise parameters and data
     bval = torch.FloatTensor(bval[:]).to(arg.train_pars.device)
     bvec = torch.FloatTensor(bvec[:]).to(arg.train_pars.device)
-    net = Net(bval, bvec, arg.net_pars).to(arg.train_pars.device)
     U1 = np.array([])
     U2 = np.array([])
     U3 = np.array([])
