@@ -33,10 +33,10 @@ class net_pars:
         # select a network setting
         self.dropout = 0.1 #0.0/0.1 chose how much dropout one likes. 0=no dropout; internet says roughly 20% (0.20) is good, although it also states that smaller networks might desire smaller amount of dropout
         self.batch_norm = True # False/True turns on batch normalistion
-        self.cons_min = [0.035, -0.010, 0.0, 0.100, -0.050, 0.9]  # V1-3, V4-6, Fp, U1-3, U4-6, S0
-        self.cons_max = [0.055,  0.010, 1.0, 0.400,  0.050, 1.1]  # V1-3, V4-6, Fp, U1-3, U4-6, S0
-        self.cons_min_w = [0.0, -0.1]    # W1-3, W4-6 for f tensor (Models 3 and 4)
-        self.cons_max_w = [0.707,  0.1]  # W1-3, W4-6 for f tensor (Models 3 and 4)
+        self.cons_min = [0.025, -0.010, 0.0, 0.080, -0.055, 0.9]
+        self.cons_max = [0.060,  0.010, 1.0, 0.420,  0.055, 1.1]
+        self.cons_min_w = [0.250, -0.120] # W1-3, W4-6 for f tensor (Models 3 and 4)
+        self.cons_max_w = [0.620,  0.120] # W1-3, W4-6 for f tensor (Models 3 and 4)
         self.fitS0 = False #indicates whether to fit S0 (True) or fix it to 1 (for normalised signals); I prefer fitting S0 as it takes along the potential error is S0.
         self.depth = 2 # number of layers
         self.width = 0 # determines network width. Putting to 0 makes it as wide as the number of b-values

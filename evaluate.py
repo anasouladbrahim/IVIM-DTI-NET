@@ -41,6 +41,17 @@ signals = np.load(f'data/simulated_{model}_signals.npy')
 gt      = np.load(f'data/simulated_{model}_gt.npy', allow_pickle=True)
 snr     = np.load(f'data/simulated_{model}_snr.npy')
 
+# Subsample for faster evaluation
+np.random.seed(42)
+idx = []
+for s in np.unique(snr):
+    mask = np.where(snr == s)[0]
+    idx.extend(np.random.choice(mask, size=min(10000, len(mask)), replace=False))
+idx = np.array(idx)
+signals = signals[idx]
+gt = gt[idx]
+snr = snr[idx]
+
 # Normalize 
 S0 = np.nanmean(signals[:, selsb], axis=1)
 signals = signals / S0[:, None]
@@ -80,8 +91,8 @@ with torch.no_grad():
             U2 = np.append(U2, U_xyt.cpu().numpy())
             U3 = np.append(U3, U_xzt.cpu().numpy())
             U4 = np.append(U4, U_yyt.cpu().numpy())
-            U5 = np.append(U5, U_yzt.cpu().numpy())
-            U6 = np.append(U6, U_zzt.cpu().numpy())
+            U5 = np.append(U5, U_zzt.cpu().numpy())  # ← U_zz
+            U6 = np.append(U6, U_yzt.cpu().numpy())  # ← U_yz
         elif model == 'model3':
             _, Dstar_scalart, V_xxt, V_xyt, V_xzt, V_yyt, V_zzt, V_yzt, \
             W_xxt, W_xyt, W_xzt, W_yyt, W_zzt, W_yzt = net(X_batch)
@@ -90,8 +101,8 @@ with torch.no_grad():
             W2 = np.append(W2, W_xyt.cpu().numpy())
             W3 = np.append(W3, W_xzt.cpu().numpy())
             W4 = np.append(W4, W_yyt.cpu().numpy())
-            W5 = np.append(W5, W_yzt.cpu().numpy())
-            W6 = np.append(W6, W_zzt.cpu().numpy())
+            W5 = np.append(W5, W_zzt.cpu().numpy())  # ← W_zz
+            W6 = np.append(W6, W_yzt.cpu().numpy())  # ← W_yz
         elif model == 'model4':
             _, V_xxt, V_xyt, V_xzt, V_yyt, V_zzt, V_yzt, \
             U_xxt, U_xyt, U_xzt, U_yyt, U_zzt, U_yzt, \
@@ -100,20 +111,20 @@ with torch.no_grad():
             U2 = np.append(U2, U_xyt.cpu().numpy())
             U3 = np.append(U3, U_xzt.cpu().numpy())
             U4 = np.append(U4, U_yyt.cpu().numpy())
-            U5 = np.append(U5, U_yzt.cpu().numpy())
-            U6 = np.append(U6, U_zzt.cpu().numpy())
+            U5 = np.append(U5, U_zzt.cpu().numpy())  # ← U_zz
+            U6 = np.append(U6, U_yzt.cpu().numpy())  # ← U_yz
             W1 = np.append(W1, W_xxt.cpu().numpy())
             W2 = np.append(W2, W_xyt.cpu().numpy())
             W3 = np.append(W3, W_xzt.cpu().numpy())
             W4 = np.append(W4, W_yyt.cpu().numpy())
-            W5 = np.append(W5, W_yzt.cpu().numpy())
-            W6 = np.append(W6, W_zzt.cpu().numpy())
+            W5 = np.append(W5, W_zzt.cpu().numpy())  # ← W_zz
+            W6 = np.append(W6, W_yzt.cpu().numpy())  # ← W_yz
         V1 = np.append(V1, V_xxt.cpu().numpy())
         V2 = np.append(V2, V_xyt.cpu().numpy())
         V3 = np.append(V3, V_xzt.cpu().numpy())
-        V4 = np.append(V4, V_yyt.cpu().numpy())
-        V5 = np.append(V5, V_yzt.cpu().numpy())
-        V6 = np.append(V6, V_zzt.cpu().numpy())
+        V4 = np.append(V4, V_yyt.cpu().numpy())  # V_yy
+        V5 = np.append(V5, V_zzt.cpu().numpy())
+        V6 = np.append(V6, V_yzt.cpu().numpy())
 
 if model == 'model3':
     print(f"Dstar_scalar range: {Dstar_scalar.min():.4f} to {Dstar_scalar.max():.4f}")
@@ -140,8 +151,8 @@ if model == 'model2':
     Dpyy = U2**2 + U4**2
     Dpzz = U3**2 + U5**2 + U6**2
     Dpxy = U1*U4
-    Dpyz = U2*U5 + U4*U6
     Dpxz = U1*U6
+    Dpyz = U2*U5 + U4*U6
     MD_pseudo_pred, FA_pseudo_pred = calc_MD_FA(Dpxx, Dpyy, Dpzz, Dpxy, Dpxz, Dpyz)
     MD_pseudo_pred = MD_pseudo_pred * 1000
     Mf_gt        = np.array([g['Mf']        for g in gt])
@@ -155,8 +166,8 @@ elif model == 'model3':
     Wfyy = W2**2 + W4**2
     Wfzz = W3**2 + W5**2 + W6**2
     Wfxy = W1*W4
-    Wfyz = W2*W5 + W4*W6
     Wfxz = W1*W6
+    Wfyz = W2*W5 + W4*W6
     MD_f_pred, FA_f_pred = calc_MD_FA(Wfxx, Wfyy, Wfzz, Wfxy, Wfxz, Wfyz)
     Dstar_scalar_pred = Dstar_scalar * 1000
     Mf_gt        = np.array([g['Mf']        for g in gt])
@@ -170,16 +181,16 @@ elif model == 'model4':
     Dpyy = U2**2 + U4**2
     Dpzz = U3**2 + U5**2 + U6**2
     Dpxy = U1*U4
-    Dpyz = U2*U5 + U4*U6
     Dpxz = U1*U6
+    Dpyz = U2*U5 + U4*U6
     MD_pseudo_pred, FA_pseudo_pred = calc_MD_FA(Dpxx, Dpyy, Dpzz, Dpxy, Dpxz, Dpyz)
     MD_pseudo_pred = MD_pseudo_pred * 1000
     Wfxx = W1**2
     Wfyy = W2**2 + W4**2
     Wfzz = W3**2 + W5**2 + W6**2
     Wfxy = W1*W4
-    Wfyz = W2*W5 + W4*W6
     Wfxz = W1*W6
+    Wfyz = W2*W5 + W4*W6
     MD_f_pred, FA_f_pred = calc_MD_FA(Wfxx, Wfyy, Wfzz, Wfxy, Wfxz, Wfyz)
     Mf_gt        = np.array([g['Mf']        for g in gt])
     FA_f_gt      = np.array([g['FA_f']      for g in gt])
