@@ -10,7 +10,7 @@ MD_diff   = np.linspace(1.6, 2.2, steps + 1)    # [10^-3 mm^2/s]
 Mf        = np.linspace(0.15, 0.25, steps + 1)   # [-]
 MD_pseudo = np.linspace(20, 120, steps + 1)      # [10^-3 mm^2/s]
 FAmax     = 0.5
-N_sim     = 100
+N_sim     = 10000
 
 # load bval and bvec
 bval = np.genfromtxt('data/dejong_bval.bval')
@@ -128,6 +128,7 @@ def add_rician_noise(signal, SNR):
 
 
 for model in models:
+    print(f'Simulating data for {model}...')
     
     # storage lists
     all_signals    = []  # noisy signals
@@ -137,7 +138,7 @@ for model in models:
     for md in MD_diff:
         for mf in Mf:
             for mds in MD_pseudo:
-                
+        
                 # sample eigenvalues for each tensor
                 eigenvalues_D,     FA_D     = getlambdas(md,  FAmax)
                 eigenvalues_Dstar, FA_Dstar = getlambdas(mds, FAmax)
@@ -146,7 +147,7 @@ for model in models:
                 # apply random rotation to each tensor
                 D_tensor     = rotate_tensor(eigenvalues_D)     * 1e-3  # [Dxx, Dyy, Dzz, Dxy, Dxz, Dyz]
                 Dstar_tensor = rotate_tensor(eigenvalues_Dstar) * 1e-3
-                f_tensor     = rotate_tensor(eigenvalues_f)             # no unit conversion for f  
+                f_tensor     = rotate_tensor(eigenvalues_f)               # no unit conversion for f  
                 
                 # compute true signal for this parameter combination
                 if model == 'model1':
@@ -157,8 +158,7 @@ for model in models:
                       S_true = signal_model3(D_tensor, f_tensor, mds, bval, bmat, bvec)
                 elif model == 'model4':
                      S_true = signal_model4(D_tensor, Dstar_tensor, f_tensor, bmat, bvec)
-                
-                # ground truth for this combination
+                     
                 gt = {
                     'MD_diff':      md,
                     'FA_diff':      FA_D,
@@ -189,3 +189,4 @@ for model in models:
     np.save(f'data/simulated_{model}_signals.npy', all_signals)
     np.save(f'data/simulated_{model}_snr.npy', all_snr)
     np.save(f'data/simulated_{model}_gt.npy', all_gt)
+    print(f'{model} done. Signals shape: {all_signals.shape}')
