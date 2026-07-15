@@ -1,29 +1,48 @@
-# IVIM-DTI-NET
 
-This repository contains the code regarding our paper in MRM: Diffusion-derived intravoxel-incoherent motion anisotropy relates to CSF and blood flow 
+# IVIM-DTI-NET: Extended Tensor Models for Kidney Diffusion MRI
 
-## Description
-The aim of this repository is to enable you to use our IVIM-DTI-NET relatively easily on your own multi-b-value multi-directional diffusion-weighted data. 
+This repository extends [IVIM-DTI-NET](https://github.com/paulienvoorter/IVIM-DTI-NET)
+(Voorter et al., 2025) to all four extended IVIM-DTI tensor models for kidney MRI
+parameter estimation. It accompanies the MSc thesis *"Neural Networks for IVIM-DTI
+Parameter Estimation in the Kidney: Robustness and Interpretability of Tensor Models
+in Diffusion MRI"* (Anas Oulad Brahim, University of Amsterdam / Amsterdam UMC, 2026).
 
-train_network.py --> trains a selfsupervised physics-informed neural network using multi-b-value multi-directional data, which you can provide yourself or can be downloaded from https://zenodo.org/records/12545278 (note that our code downloads this data automatically in the folder 'data').
+The physics-informed, self-supervised network is evaluated against Trust Region
+Reflective least-squares fitting on simulated data with known ground truth, across a
+range of signal-to-noise ratios. The work adds a gradient sensitivity (XAI) analysis
+and a model-mismatch analysis to the original framework.
 
-After your network is trained, it is being saved in the folder 'trained_networks', and you can observe the corresponding loss curve in the folder 'plots'
+## The four tensor models
 
-Now, you can run predict_IVIM-DTI_parameters.py, which loads the trained network and predicts all IVIM-DTI model parameters. The IVIM-DTI parameter maps are saved in 'data/subject01/parammaps_IVIM-DTI-NET' as *.nii files having the same image space as the diffusion images. You can use a nifti viewer to see the paramater maps, (e.g., fsleyes).
+| Model | D | D\* | f | Free parameters |
+|-------|--------|--------|--------|-----------------|
+| 1 | tensor | — | — | 6 |
+| 2 | tensor | tensor | scalar | 13 |
+| 3 | tensor | scalar | tensor | 13 |
+| 4 | tensor | tensor | tensor | 18 |
 
-## Create conda environment
-To directly run the code, we added a '.yml' file which can be run in anaconda. To create a conda environment with the '.yml' file, enter the command in the terminal (e.g. Anaconda Powershell Prompt): conda env create -f environment.yml 
+## Pipeline
 
-This now creates an environment called 'ivimdti' that can be activated by: conda activate ivim
+```
+simulate  →  train  →  evaluate  →  XAI / mismatch
+```
 
-## Authors
-Paulien Voorter paulien.voorter@gmail.com | p.voorter@maastrichtuniversity.nl | https://github.com/paulienvoorter
+Signals are simulated following the framework of de Jong (2022): 321 measurements
+(one b = 0 plus 32 non-collinear directions at each of 10 non-zero b-values up to
+600 s/mm²), 64 parameter combinations per model, Rician noise at 12 SNR levels from
+5 to 60 plus SNR = 1000, with 10,000 noise realisations per combination.
 
-## Acknowledgement
+## Attribution
 
-Note that this code is build upon previous repositories, and I would like to thank the authors for sharing their code:
+This repository is a fork of Paulien Voorter's
+[IVIM-DTI-NET](https://github.com/paulienvoorter/IVIM-DTI-NET), extended here to all
+four tensor models and evaluated on simulated kidney data.
 
-June 2021        Oliver Gurney-Champion and Misha Kaandorp https://github.com/oliverchampion/IVIMNET
+- Network architecture (IVIM-DTI-NET): Voorter et al. (2025), *Magn. Reson. Med.* 93:930–941.
+- Simulation framework and acquisition protocol: de Jong (2022).
+- Physics-informed self-supervised IVIM basis: Kaandorp et al. (2021).
 
-August 2019      Sebastiano Barbieri: https://github.com/sebbarb/deep_ivim
+The original code builds on earlier work, which the upstream authors gratefully acknowledge:
 
+- Oliver Gurney-Champion and Misha Kaandorp — [IVIMNET](https://github.com/oliverchampion/IVIMNET)
+- Sebastiano Barbieri — [deep_ivim](https://github.com/sebbarb/deep_ivim)
