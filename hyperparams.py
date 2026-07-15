@@ -15,13 +15,13 @@ import numpy as np
 class train_pars:
     def __init__(self):
         self.optim='adam' #these are the optimisers implementd. Choices are: 'sgd'; 'sgdr'; 'adagrad' adam
-        self.lr = 0.00003 # this is the learning rate.
-        self.patience= 10 # this is the number of epochs without improvement that the network waits untill determining it found its optimum
+        self.lr = 0.00003 # this is the learning rate. (was 0.00003)
+        self.patience= 30 # this is the number of epochs without improvement that the network waits untill determining it found its optimum (was 10)
         self.batch_size= 128 # number of datasets taken along per iteration
         self.maxit = 500 # max iterations per epoch
         self.split = 0.9 # split of test and validation data
         self.loss_fun = 'rms' # what is the loss used for the model. rms is root mean square (linear regression-like); L1 is L1 normalisation (less focus on outliers)
-        self.scheduler = False # LR is important. This approach allows to reduce the LR itteratively when there is no improvement throughout an 5 consecutive epochs
+        self.scheduler = True # LR is important. This approach allows to reduce the LR itteratively when there is no improvement throughout an 5 consecutive epochs
         # use GPU if available
         self.use_cuda = torch.cuda.is_available()
         self.device = self.device = torch.device("cpu") #torch.device("cuda:0" if self.use_cuda else "cpu") --> using gpu should work as well, but I was not able to test this.
@@ -32,11 +32,11 @@ class net_pars:
     def __init__(self):
         # select a network setting
         self.dropout = 0.1 #0.0/0.1 chose how much dropout one likes. 0=no dropout; internet says roughly 20% (0.20) is good, although it also states that smaller networks might desire smaller amount of dropout
-        self.batch_norm = True # False/True turns on batch normalistion
-        self.cons_min = [0.025, -0.010, 0.0, 0.080, -0.055, 0.9]
-        self.cons_max = [0.060,  0.010, 1.0, 0.420,  0.055, 1.1]
-        self.cons_min_w = [0.250, -0.120] # W1-3, W4-6 for f tensor (Models 3 and 4)
-        self.cons_max_w = [0.620,  0.120] # W1-3, W4-6 for f tensor (Models 3 and 4)
+        self.batch_norm = True # False/True turns on batch normalistionself.cons_min = [0.014, -0.030, 0.0, 0.0,   -0.387, 0.9]
+        self.cons_min = [0.014, -0.030, 0.0, 0.0,   -0.387, 0.9]
+        self.cons_max = [0.074,  0.030, 1.0, 0.652,  0.387, 1.1]
+        self.cons_min_w = [0.060, -0.387]
+        self.cons_max_w = [0.834,  0.387]
         self.fitS0 = False #indicates whether to fit S0 (True) or fix it to 1 (for normalised signals); I prefer fitting S0 as it takes along the potential error is S0.
         self.depth = 2 # number of layers
         self.width = 0 # determines network width. Putting to 0 makes it as wide as the number of b-values
@@ -44,7 +44,7 @@ class net_pars:
 
 class hyperparams:
     def __init__(self):
-        self.fig = False # plot and save training and validation loss of network
+        self.fig = True # plot and save training and validation loss of network
         self.save_name = 'ivim-dti-kidney' 
         self.net_pars = net_pars()
         self.train_pars = train_pars()
